@@ -9,11 +9,13 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:e2e": "vitest run test/e2e"
+    "test:e2e": "vitest run test/e2e",
+    "test:e2e:live": "npx tsx test/e2e/run-local.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.2",
     "@hono/zod-validator": "^0.8.0",
+    "dotenv": "^17.4.2",
     "hono": "^4.6.0",
     "viem": "^2.21.3",
     "zod": "^3.23.8"
