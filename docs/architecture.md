@@ -97,6 +97,60 @@ Facilitator's role: transaction broadcaster only.
 | `src/routes/verify.ts` | `POST /verify` |
 | `src/routes/settle.ts` | `POST /settle` |
 
+## Pluggable Rails Design
+
+The adapter is not tied to `ocr-permit-v1`. Any payment rail that can express settlement as a call to `Asset.subscribe()` can be added by implementing three methods and registering the adapter.
+
+### Separation of concerns
+
+```
+┌─────────────────────────────────────────┐
+│              Payment Layer              │
+│  (how the user proves they paid)        │
+│                                         │
+│  ocr-permit-v1: EIP-2612 permit sig     │
+│  future-rail:   Stripe PaymentIntent    │
+│  future-rail:   EIP-3009 authorization  │
+└──────────────────┬──────────────────────┘
+                   │ settle() calls
+┌──────────────────▼──────────────────────┐
+│          Entitlement Layer              │
+│  (what happens on-chain regardless)     │
+│                                         │
+│  Asset.subscribe(subscriber, payer, …)  │
+│  AssetRegistry records subscription     │
+│  isSubscriptionActive → true            │
+└─────────────────────────────────────────┘
+```
+
+The contract has no knowledge of which rail paid. It only sees a valid `subscribe()` call with a permit. The rail adapter is the translation layer between "user proved payment" and "contract call executed."
+
+### Rail registration
+
+Each rail is an object implementing `IPaymentAdapter` (see `IPaymentAdapter.md`). Adapters are registered in `src/index.ts`:
+
+```typescript
+app.route("/supported", supportedRouter(config));   // aggregates all registered adapters
+app.route("/verify",    verifyRouter(config, publicClient));
+app.route("/settle",    settleRouter(config, publicClient));
+```
+
+To add a rail: implement the interface, mount its routes, update `/supported` to include its scheme. See `docs/integration-guide.md` for the step-by-step.
+
+### What the rails share
+
+- The three HTTP endpoints (`/supported`, `/verify`, `/settle`) — shape is fixed
+- The idempotency store — keyed per rail by a payment-specific unique ID
+- The invariant: the Facilitator's signing key is never `payer`
+
+### What varies per rail
+
+- How `verify()` checks proof of payment (on-chain sig vs. off-chain API call)
+- How `settle()` funds the subscription (user's own permit vs. Facilitator pre-funded wallet)
+- Whether the rail is custodial (see `IPaymentAdapter.md` classification table)
+
+---
+
 ## Limitations
 
 - In-memory idempotency store: lost on restart. Swap for Redis before production.

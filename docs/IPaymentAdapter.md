@@ -57,6 +57,35 @@ type SettleResponse =
   | { success: false; errorReason: string; transaction: ""; network: string };
 ```
 
+## Rail Classification
+
+Before implementing a rail, determine where it falls in this table. The custody column is the critical one.
+
+| Rail type | `verify()` checks | `settle()` action | Facilitator holds funds? |
+|-----------|-------------------|-------------------|--------------------------|
+| Crypto permit (`ocr-permit-v1`) | EIP-2612 sig validity off-chain | broadcasts `Asset.subscribe()` with user's permit | No — tokens flow user → Asset |
+| Crypto pre-approval | on-chain `allowance(user, facilitator) >= amount` | `transferFrom` + `subscribe()` | Transiently — regulatory grey area |
+| Fiat bridge (Stripe, card) | Stripe PaymentIntent confirmed via API | Facilitator-funded `subscribe()` after fiat receipt | **Yes — custody event** |
+
+### Custody decision tree
+
+```
+Does settle() require the Facilitator to hold tokens
+before calling Asset.subscribe()?
+│
+├─ No → non-custodial rail. Proceed.
+│
+└─ Yes → custodial rail.
+         ├─ Have you completed a legal review?
+         │   ├─ No  → stop. Do not implement.
+         │   └─ Yes → document the custody window explicitly in the rail's spec doc.
+         │
+         └─ Under BaFin / MiCA: a Facilitator that holds user assets,
+            even transiently, may trigger VASP licensing requirements.
+            This is not a technical concern — it is a legal one.
+            Consult counsel before operating a custodial rail commercially.
+```
+
 ## Implementing a New Rail
 
 1. Create `src/adapters/<name>.ts` implementing `IPaymentAdapter`.
