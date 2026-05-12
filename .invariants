@@ -1,0 +1,43 @@
+version: "1.0"
+scope: "open-creator-rails.x402-adapter"
+inherits: "../.invariants"
+since: "2026-05-12"
+authority: "TPM only — not agent-writable"
+
+asserts:
+
+  - id: facilitator_never_payer
+    claim: "The Facilitator's signing address must never appear as the `payer` argument in any Asset.subscribe() call. payer must always be the user's wallet address."
+    source: codebase
+    severity: FROZEN
+    verify:
+      search: "account.address payer payload.payer settle"
+      in_file: "open-creator-rails.x402-adapter/src/routes/settle.ts"
+    why: "If the Facilitator is payer, tokens flow through the Facilitator wallet, creating custodial exposure. This is the exact regulatory risk (BaFin licensing) the ocr-permit-v1 design was built to avoid. Any change to this invariant requires a legal review before the PR lands."
+
+  - id: cancel_not_called
+    claim: "The adapter never calls Asset.cancelSubscription(). Cancellation by users is out of scope for this service."
+    source: codebase
+    severity: FROZEN
+    verify:
+      search: "cancelSubscription"
+      in_file: "open-creator-rails.x402-adapter/src"
+    why: "cancelSubscription's identity derivation (keccak256(abi.encode(string, msg.sender))) is protocol overreach at the primitive layer (OQ-7 in PROTOCOL.md). The adapter exposes no cancellation path — users who want to cancel call the contract directly with subscriberId='ocr-permit-v1'. Calling cancel from a Facilitator-owned key would also require the Facilitator to sign on behalf of the user, which it cannot do safely."
+
+  - id: subscriber_derivation_ocr_permit_v1
+    claim: "All subscriber IDs produced by this adapter are derived as keccak256(abi.encode('ocr-permit-v1', userAddress)). No other derivation formula is used."
+    source: codebase
+    severity: FROZEN
+    verify:
+      search: "ocr-permit-v1 deriveSubscriberId encodeAbiParameters"
+      in_file: "open-creator-rails.x402-adapter/src/subscriber.ts"
+    why: "This derivation is what allows users to self-cancel. Changing the formula silently orphans all existing subscriptions — they can no longer be cancelled by the subscriber."
+
+  - id: idempotency_checked_before_broadcast
+    claim: "settle.ts checks the idempotency store before calling writeContract. A settled (payer, permitNonce) pair is never broadcast twice."
+    source: codebase
+    severity: VERSIONED
+    verify:
+      search: "getSettled markSettled writeContract"
+      in_file: "open-creator-rails.x402-adapter/src/routes/settle.ts"
+    why: "EIP-2612 nonces are consumed on-chain; a double-broadcast wastes gas and may revert. The store prevents retries from triggering a second chain call."
