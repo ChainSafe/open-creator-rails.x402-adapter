@@ -20,6 +20,34 @@ export type PermitPayload = {
 
 const nonceAbi = parseAbi(["function nonces(address owner) view returns (uint256)"]);
 const nameAbi = parseAbi(["function name() view returns (string)"]);
+const versionAbi = parseAbi(["function version() view returns (string)"]);
+
+/** Circle native USDC — EIP-2612 domain uses version "2", not "1". */
+const USDC_BY_CHAIN: Record<number, Address> = {
+  84532: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+  8453: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+};
+
+async function erc20PermitVersion(
+  publicClient: PublicClient,
+  chainId: number,
+  tokenAddress: Address,
+): Promise<string> {
+  const known = USDC_BY_CHAIN[chainId];
+  if (known && known.toLowerCase() === tokenAddress.toLowerCase()) {
+    return "2";
+  }
+  try {
+    const version = await publicClient.readContract({
+      address: tokenAddress,
+      abi: versionAbi,
+      functionName: "version",
+    });
+    return String(version);
+  } catch {
+    return "1";
+  }
+}
 
 /**
  * Verifies an EIP-2612 permit signature off-chain.
@@ -56,18 +84,21 @@ export async function verifyPermitSignature(
     };
   }
 
-  // Read token name for EIP-712 domain
-  const tokenName = await publicClient.readContract({
-    address: tokenAddress,
-    abi: nameAbi,
-    functionName: "name",
-  });
+  // Read token name + EIP-712 domain version (USDC uses "2", most tokens use "1").
+  const [tokenName, domainVersion] = await Promise.all([
+    publicClient.readContract({
+      address: tokenAddress,
+      abi: nameAbi,
+      functionName: "name",
+    }),
+    erc20PermitVersion(publicClient, chainId, tokenAddress),
+  ]);
 
   // Reconstruct EIP-712 typed data hash
   const hash = hashTypedData({
     domain: {
       name: tokenName,
-      version: "1",
+      version: domainVersion,
       chainId,
       verifyingContract: tokenAddress,
     },

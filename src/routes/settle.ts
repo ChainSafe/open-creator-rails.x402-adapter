@@ -64,7 +64,13 @@ export function settleRouter(config: Config, publicClient: PublicClient): Hono {
     // 2. Facilitator must not be the payer
     if (account.address.toLowerCase() === payload.payer.toLowerCase()) {
       return c.json(
-        { success: false, transaction: "", network, errorReason: "facilitator address cannot be payer" },
+        {
+          success: false,
+          transaction: "",
+          network,
+          errorReason:
+            "facilitator address cannot be payer — PRIVATE_KEY in x402-adapter/.env must not be the wallet you subscribe with",
+        },
         400,
       );
     }

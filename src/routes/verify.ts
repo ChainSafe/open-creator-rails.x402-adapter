@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
-import type { PublicClient } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import type { Hex, PublicClient } from "viem";
 import { verifyPermitSignature } from "../permit.js";
 import { getSettled } from "../idempotency.js";
 import type { Config } from "../config.js";
@@ -28,6 +29,7 @@ const payloadSchema = z.object({
 });
 
 export function verifyRouter(config: Config, publicClient: PublicClient): Hono {
+  const facilitatorAddress = privateKeyToAccount(config.PRIVATE_KEY as Hex).address;
   const app = new Hono();
 
   app.post("/", zValidator("json", payloadSchema), async (c) => {
@@ -40,9 +42,12 @@ export function verifyRouter(config: Config, publicClient: PublicClient): Hono {
       return c.json({ isValid: true });
     }
 
-    // Spender must be the Asset contract (payTo)
-    if (payload.payer.toLowerCase() === config.PRIVATE_KEY.slice(0, 42).toLowerCase()) {
-      return c.json({ isValid: false, invalidReason: "payer must not be the facilitator" });
+    if (payload.payer.toLowerCase() === facilitatorAddress.toLowerCase()) {
+      return c.json({
+        isValid: false,
+        invalidReason:
+          "payer must not be the facilitator wallet — subscribe with a different MetaMask account than PRIVATE_KEY in x402-adapter/.env",
+      });
     }
 
     const result = await verifyPermitSignature(
